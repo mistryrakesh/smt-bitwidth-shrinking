@@ -45,6 +45,14 @@ Node::Node(string n, string dt, int w) {
     bitSlices.insert(w);
 }
 
+Node::Node(string n, string dt, int w, set<Node *> p, set<int> bs) {
+    name = n;
+    datatype = dt;
+    width = w;
+    preds = p;
+    bitSlices = bs;
+}
+
 /* getters */
 string Node::getName() {
     return name;
@@ -346,7 +354,8 @@ bool shrinkSmtGraph(map<string, Node *>& nMap, int shrinkToBitWidth) {
         return false;
 
     map<string, int> alreadyResizedNodes;
-    return shrinkNode(nMap["__root__"], alreadyResizedNodes, shrinkWidth);
+    map<string, string> replacedNodesMap;
+    return shrinkNode(nMap["__root__"], alreadyResizedNodes, replacedNodesMap, shrinkWidth);
 }
 
 bool shrinkLeaves(vector<Node *>& leafNodes, int shrinkToBitWidth, int shrinkWidth) {
@@ -376,7 +385,7 @@ bool shrinkLeaves(vector<Node *>& leafNodes, int shrinkToBitWidth, int shrinkWid
     return true;
 }
 
-bool shrinkNode(Node *node, map<string, int>& alreadyResizedNodes, int shrinkWidth) {
+bool shrinkNode(Node *node, map<string, int>& alreadyResizedNodes, map<string, string>& rMap, int shrinkWidth) {
 
     if (alreadyResizedNodes.find(node->getName()) != alreadyResizedNodes.end())
         return true;
@@ -388,7 +397,7 @@ bool shrinkNode(Node *node, map<string, int>& alreadyResizedNodes, int shrinkWid
     } else if (sameMultibitReturnValueOperators.find(node->getOper()) != sameMultibitReturnValueOperators.end()) {
 
         vector<Node *>::iterator it = node->getSuccs().begin();
-        shrinkNode(*it, alreadyResizedNodes, shrinkWidth);
+        shrinkNode(*it, alreadyResizedNodes, rMap, shrinkWidth);
 
         vector<Node *>::iterator secondSucc;
         if (node->getOper() == "ite")
@@ -396,11 +405,11 @@ bool shrinkNode(Node *node, map<string, int>& alreadyResizedNodes, int shrinkWid
 
         secondSucc = it;
 
-        shrinkNode(*it, alreadyResizedNodes, shrinkWidth);
+        shrinkNode(*it, alreadyResizedNodes, rMap, shrinkWidth);
 
         int succWidth = (*it)->getWidth();
         for (++it; it != node->getSuccs().end(); ++it) {
-            shrinkNode(*it, alreadyResizedNodes, shrinkWidth);
+            shrinkNode(*it, alreadyResizedNodes, rMap, shrinkWidth);
 
             if ((*it)->getWidth() != succWidth) {
                 if (logFile) {
@@ -418,11 +427,11 @@ bool shrinkNode(Node *node, map<string, int>& alreadyResizedNodes, int shrinkWid
     } else if (node->getOper() == "=" || node->getOper() == "bvuge" || node->getOper() == "bvule") {
         vector<Node *>::iterator it = node->getSuccs().begin();
 
-        shrinkNode(*it, alreadyResizedNodes, shrinkWidth);
+        shrinkNode(*it, alreadyResizedNodes, rMap, shrinkWidth);
 
         int succWidth = (*it)->getWidth();
         for (++it; it != node->getSuccs().end(); ++it) {
-            shrinkNode(*it, alreadyResizedNodes, shrinkWidth);
+            shrinkNode(*it, alreadyResizedNodes, rMap, shrinkWidth);
 
             if ((*it)->getWidth() != succWidth) {
                 if (logFlag) {
@@ -455,7 +464,7 @@ bool shrinkNode(Node *node, map<string, int>& alreadyResizedNodes, int shrinkWid
         else {
             int sumOfSuccWidth = 0;
             for (vector<Node *>::iterator it = node->getSuccs().begin(); it != node->getSuccs().end(); ++it) {
-                shrinkNode(*it, alreadyResizedNodes, shrinkWidth);
+                shrinkNode(*it, alreadyResizedNodes, rMap, shrinkWidth);
                 sumOfSuccWidth += (*it)->getWidth();
             }
 
@@ -464,7 +473,7 @@ bool shrinkNode(Node *node, map<string, int>& alreadyResizedNodes, int shrinkWid
         }
     } else if (node->getOper() == "extract") {
         Node *succ = *(node->getSuccs().begin());
-        shrinkNode(succ, alreadyResizedNodes, shrinkWidth);
+        shrinkNode(succ, alreadyResizedNodes, rMap, shrinkWidth);
 
         if (node->getLb() == 0) {
             alreadyResizedNodes[node->getName()] = alreadyResizedNodes[succ->getName()];
@@ -479,7 +488,9 @@ bool shrinkNode(Node *node, map<string, int>& alreadyResizedNodes, int shrinkWid
     } else if (node->getName() == "__root__"
             || (singleBitReturnValueOperators.find(node->getOper()) != singleBitReturnValueOperators.end())) {
         for (vector<Node *>::iterator it = node->getSuccs().begin(); it != node->getSuccs().end(); ++it)
-            isShrinkable = isShrinkable && shrinkNode(*it, alreadyResizedNodes, shrinkWidth);
+            isShrinkable = isShrinkable && shrinkNode(*it, alreadyResizedNodes, rMap, shrinkWidth);
+    } else if (node->getOper() == "bvmul") {
+        replaceNodeWithVariable(node, rMap);
     } else {
         if (logFlag) {
             logFile << "[Shrink Error] Node: " << node->getName() << ", Reason: Unhandled operator: " << node->getOper() << endl;
@@ -487,6 +498,14 @@ bool shrinkNode(Node *node, map<string, int>& alreadyResizedNodes, int shrinkWid
     }
 
     return isShrinkable;
+}
+
+void replaceNodeWithVariable(Node *node, map<string, string>& rMap) {
+    static int counter = 0;
+    string tempNodeName = "r__temp__" + toString(counter++);
+    Node *newNode = new Node(tempNodeName, "bitvector", node->getWidth(), node->getPreds(), node->getBitSlices());
+
+    nodeMap[tempNodeName] = newNode;
 }
 
 void getLeafNodes(map<string, Node *>& nMap, vector<Node *>& leafNodes) {
@@ -514,7 +533,6 @@ Node* getLeafWithSmallestRightMostSlice(vector<Node *>& nMap, int shrinkToBitWid
 void generateSmtFile(map<string, Node *>& nMap, ofstream& smtFile) {
     smtFile << "; Shrunk SMT constraints for module abs_diff" << endl;
     smtFile << "; Generated by 'Bit Shrinking Pass' of 2-pass STEword " << endl;
-    smtFile << ";" << endl;
     smtFile << ";" << endl;
     smtFile << "(set-logic QF_ABV)" << endl;
     smtFile << "(set-info :smt-lib-version 2.0)" << endl;

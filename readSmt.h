@@ -29,6 +29,7 @@ public:
     Node(string n, string o, string dt);
     Node(string n, string dt);
     Node(string n, string dt, int w);
+    Node(string n, string dt, int w, set<Node *> preds, set<int> bitslices);
 
     /* getters */
     string getName();
@@ -80,7 +81,10 @@ bool updateBitSliceOfNode(Node *src, Node *dest);
 
 bool shrinkSmtGraph(map<string, Node *>& nMap, int shrinkToBitWidth);
 bool shrinkLeaves(vector<Node *>& leafNodes, int shrinkToBitWidth, int shrinkWidth);
-bool shrinkNode(Node *node, map<string, int>& alreadyResizedNodes, int shrinkWidth);
+bool shrinkNode(Node *node, map<string, int>& alreadyResizedNodes, map<string, string>& rMap, int shrinkWidth);
+
+void replaceNodeWithVariable(Node *node, map<string, string>& rMap);
+
 void getLeafNodes(map<string, Node *>& nMap, vector<Node *>& leafNodes);
 Node* getLeafWithSmallestRightMostSlice(vector<Node *>& nMap, int shrinkToBitWidth);
 
