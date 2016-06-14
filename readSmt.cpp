@@ -19,6 +19,7 @@ set<string> sameMultibitReturnValueOperators;
 set<string> diffMultibitReturnValueOperators;
 set<string> singleBitReturnValueOperators;
 set<string> operatorsAffectingRightSlices;
+set<string> operatorsWhichGetReplaced;
 
 static bool logFlag = false;
 static ofstream logFile;
@@ -133,6 +134,13 @@ int Node::getRightSliceWidth() {
     return *(++it) - *(getBitSlices().begin());
 }
 
+void Node::replaceSucc(Node *oldNode, Node *newNode) {
+    for (vector<Node *>::iterator it = succs.begin(); it != succs.end(); ++it) {
+        if (*it == oldNode)
+            *it = newNode;
+    }
+}
+
 string Node::toString() {
     stringstream ss;
     ss << "[Name: " << name;
@@ -181,6 +189,8 @@ void init() {
     singleBitReturnValueOperators.insert("not");
     singleBitReturnValueOperators.insert("bvuge");
     singleBitReturnValueOperators.insert("bvule");
+
+    operatorsWhichGetReplaced.insert("bvmul");
 }
 
 void printMap(map<string, Node *>& nMap, ostream& out) {
@@ -231,14 +241,15 @@ void bitSliceAndPropagate(map<string, Node *>& nMap) {
     queue<Node *> bitSliceQueue;
     getExtractNodes(root, bitSliceQueue); // pushes the 'extract' nodes in bitSliceQueue
 
+    map<string, string> replaceNodesMap;
     while (!bitSliceQueue.empty()) {
         Node *node = bitSliceQueue.front();
         bitSliceQueue.pop();
-        propagateBitSlice(node, bitSliceQueue);
+        propagateBitSlice(node, bitSliceQueue, replaceNodesMap);
     }
 }
 
-void propagateBitSlice(Node *node, queue<Node *>& bitSliceQueue) {
+void propagateBitSlice(Node *node, queue<Node *>& bitSliceQueue, map<string, string>& rMap) {
 
     if (node->getOper() == "extract" || node->getOper() == "concat"
             || (sameMultibitReturnValueOperators.find(node->getOper()) != sameMultibitReturnValueOperators.end())
@@ -247,6 +258,9 @@ void propagateBitSlice(Node *node, queue<Node *>& bitSliceQueue) {
         propagateBitSliceToSuccs(node, bitSliceQueue);
         propagateBitSliceToSiblings(node, bitSliceQueue);
     } else if (node->getWidth() > 1 && (node->getDatatype() == "constant" || (node->getOper() == "" && node->getDatatype() == "bitvector"))) {
+        propagateBitSliceToSiblings(node, bitSliceQueue);
+    } else if (operatorsWhichGetReplaced.find(node->getOper()) != operatorsWhichGetReplaced.end()) {
+        node = replaceNodeWithVariable(node, rMap);
         propagateBitSliceToSiblings(node, bitSliceQueue);
     } else {
         if (logFlag)
@@ -354,8 +368,7 @@ bool shrinkSmtGraph(map<string, Node *>& nMap, int shrinkToBitWidth) {
         return false;
 
     map<string, int> alreadyResizedNodes;
-    map<string, string> replacedNodesMap;
-    return shrinkNode(nMap["__root__"], alreadyResizedNodes, replacedNodesMap, shrinkWidth);
+    return shrinkNode(nMap["__root__"], alreadyResizedNodes, shrinkWidth);
 }
 
 bool shrinkLeaves(vector<Node *>& leafNodes, int shrinkToBitWidth, int shrinkWidth) {
@@ -385,7 +398,7 @@ bool shrinkLeaves(vector<Node *>& leafNodes, int shrinkToBitWidth, int shrinkWid
     return true;
 }
 
-bool shrinkNode(Node *node, map<string, int>& alreadyResizedNodes, map<string, string>& rMap, int shrinkWidth) {
+bool shrinkNode(Node *node, map<string, int>& alreadyResizedNodes, int shrinkWidth) {
 
     if (alreadyResizedNodes.find(node->getName()) != alreadyResizedNodes.end())
         return true;
@@ -397,7 +410,7 @@ bool shrinkNode(Node *node, map<string, int>& alreadyResizedNodes, map<string, s
     } else if (sameMultibitReturnValueOperators.find(node->getOper()) != sameMultibitReturnValueOperators.end()) {
 
         vector<Node *>::iterator it = node->getSuccs().begin();
-        shrinkNode(*it, alreadyResizedNodes, rMap, shrinkWidth);
+        shrinkNode(*it, alreadyResizedNodes, shrinkWidth);
 
         vector<Node *>::iterator secondSucc;
         if (node->getOper() == "ite")
@@ -405,11 +418,11 @@ bool shrinkNode(Node *node, map<string, int>& alreadyResizedNodes, map<string, s
 
         secondSucc = it;
 
-        shrinkNode(*it, alreadyResizedNodes, rMap, shrinkWidth);
+        shrinkNode(*it, alreadyResizedNodes, shrinkWidth);
 
         int succWidth = (*it)->getWidth();
         for (++it; it != node->getSuccs().end(); ++it) {
-            shrinkNode(*it, alreadyResizedNodes, rMap, shrinkWidth);
+            shrinkNode(*it, alreadyResizedNodes, shrinkWidth);
 
             if ((*it)->getWidth() != succWidth) {
                 if (logFile) {
@@ -427,11 +440,11 @@ bool shrinkNode(Node *node, map<string, int>& alreadyResizedNodes, map<string, s
     } else if (node->getOper() == "=" || node->getOper() == "bvuge" || node->getOper() == "bvule") {
         vector<Node *>::iterator it = node->getSuccs().begin();
 
-        shrinkNode(*it, alreadyResizedNodes, rMap, shrinkWidth);
+        shrinkNode(*it, alreadyResizedNodes, shrinkWidth);
 
         int succWidth = (*it)->getWidth();
         for (++it; it != node->getSuccs().end(); ++it) {
-            shrinkNode(*it, alreadyResizedNodes, rMap, shrinkWidth);
+            shrinkNode(*it, alreadyResizedNodes, shrinkWidth);
 
             if ((*it)->getWidth() != succWidth) {
                 if (logFlag) {
@@ -464,7 +477,7 @@ bool shrinkNode(Node *node, map<string, int>& alreadyResizedNodes, map<string, s
         else {
             int sumOfSuccWidth = 0;
             for (vector<Node *>::iterator it = node->getSuccs().begin(); it != node->getSuccs().end(); ++it) {
-                shrinkNode(*it, alreadyResizedNodes, rMap, shrinkWidth);
+                shrinkNode(*it, alreadyResizedNodes, shrinkWidth);
                 sumOfSuccWidth += (*it)->getWidth();
             }
 
@@ -473,7 +486,7 @@ bool shrinkNode(Node *node, map<string, int>& alreadyResizedNodes, map<string, s
         }
     } else if (node->getOper() == "extract") {
         Node *succ = *(node->getSuccs().begin());
-        shrinkNode(succ, alreadyResizedNodes, rMap, shrinkWidth);
+        shrinkNode(succ, alreadyResizedNodes, shrinkWidth);
 
         if (node->getLb() == 0) {
             alreadyResizedNodes[node->getName()] = alreadyResizedNodes[succ->getName()];
@@ -488,9 +501,7 @@ bool shrinkNode(Node *node, map<string, int>& alreadyResizedNodes, map<string, s
     } else if (node->getName() == "__root__"
             || (singleBitReturnValueOperators.find(node->getOper()) != singleBitReturnValueOperators.end())) {
         for (vector<Node *>::iterator it = node->getSuccs().begin(); it != node->getSuccs().end(); ++it)
-            isShrinkable = isShrinkable && shrinkNode(*it, alreadyResizedNodes, rMap, shrinkWidth);
-    } else if (node->getOper() == "bvmul") {
-        replaceNodeWithVariable(node, rMap);
+            isShrinkable = isShrinkable && shrinkNode(*it, alreadyResizedNodes, shrinkWidth);
     } else {
         if (logFlag) {
             logFile << "[Shrink Error] Node: " << node->getName() << ", Reason: Unhandled operator: " << node->getOper() << endl;
@@ -500,12 +511,17 @@ bool shrinkNode(Node *node, map<string, int>& alreadyResizedNodes, map<string, s
     return isShrinkable;
 }
 
-void replaceNodeWithVariable(Node *node, map<string, string>& rMap) {
+Node* replaceNodeWithVariable(Node *node, map<string, string>& rMap) {
     static int counter = 0;
     string tempNodeName = "r__temp__" + toString(counter++);
     Node *newNode = new Node(tempNodeName, "bitvector", node->getWidth(), node->getPreds(), node->getBitSlices());
 
+    for (set<Node *>::iterator it = newNode->getPreds().begin(); it != newNode->getPreds().end(); ++it) {
+        (*it)->replaceSucc(node, newNode);
+    }
+
     nodeMap[tempNodeName] = newNode;
+    return newNode;
 }
 
 void getLeafNodes(map<string, Node *>& nMap, vector<Node *>& leafNodes) {
@@ -625,6 +641,8 @@ bool checkOperators(map<string, Node *>& nMap) {
         else if (diffMultibitReturnValueOperators.find(node->getOper()) != diffMultibitReturnValueOperators.end())
             continue;
         else if (singleBitReturnValueOperators.find(node->getOper()) != singleBitReturnValueOperators.end())
+            continue;
+        else if (operatorsWhichGetReplaced.find(node->getOper()) != operatorsWhichGetReplaced.end())
             continue;
         else if (node->getOper() == "")
             continue;

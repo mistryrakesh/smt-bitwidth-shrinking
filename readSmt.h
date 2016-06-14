@@ -55,6 +55,7 @@ public:
     void addPred(Node *node);
     bool addBitSlice(int index);
     int getRightSliceWidth();
+    void replaceSucc(Node *oldNode, Node *newNode);
     string toString();
 };
 
@@ -74,16 +75,16 @@ void addSuccsAndPreds(Node *parent, vector<Node *> *succs);
 void getExtractNodes(Node *root, queue<Node *>& bitSliceQueue);
 
 void bitSliceAndPropagate(map<string, Node *>& nMap);
-void propagateBitSlice(Node *node, queue<Node *>& bitSliceQueue);
+void propagateBitSlice(Node *node, queue<Node *>& bitSliceQueue, map<string, string>& rMap);
 void propagateBitSliceToSuccs(Node *node, queue<Node *>& bitSliceQueue);
 void propagateBitSliceToSiblings(Node *node, queue<Node *>& bitSliceQueue);
 bool updateBitSliceOfNode(Node *src, Node *dest);
 
 bool shrinkSmtGraph(map<string, Node *>& nMap, int shrinkToBitWidth);
 bool shrinkLeaves(vector<Node *>& leafNodes, int shrinkToBitWidth, int shrinkWidth);
-bool shrinkNode(Node *node, map<string, int>& alreadyResizedNodes, map<string, string>& rMap, int shrinkWidth);
+bool shrinkNode(Node *node, map<string, int>& alreadyResizedNodes, int shrinkWidth);
 
-void replaceNodeWithVariable(Node *node, map<string, string>& rMap);
+Node* replaceNodeWithVariable(Node *node, map<string, string>& rMap);
 
 void getLeafNodes(map<string, Node *>& nMap, vector<Node *>& leafNodes);
 Node* getLeafWithSmallestRightMostSlice(vector<Node *>& nMap, int shrinkToBitWidth);
