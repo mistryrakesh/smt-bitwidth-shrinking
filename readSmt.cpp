@@ -207,6 +207,17 @@ void printMap(map<string, Node *>& nMap, ostream& out) {
     out << "--------------------[end] Map---------------------" << endl;
 }
 
+void printReplacementMap(map<string, string>& rMap, ostream& out) {
+    map<string, string>::iterator it;
+
+    out << "-------------------[begin] Map--------------------" << endl;
+    out << "Size of Map: " << rMap.size() << endl;
+    for (it = rMap.begin(); it != rMap.end(); ++it) {
+        out << it->first << ": " << it->second << endl;
+    }
+    out << "--------------------[end] Map---------------------" << endl;
+}
+
 void addSuccsAndPreds(Node *parent, vector<Node *> *succs) {
     vector<Node *>::iterator it;
     for (it = succs->begin(); it != succs->end(); ++it) {
@@ -288,6 +299,7 @@ Node* replaceNodeWithVariable(Node *node, map<string, string>& rMap) {
     }
 
     nodeMap[tempNodeName] = newNode;
+    rMap[tempNodeName] = node->getName();
 
     if (logFlag)
         logFile << "Replacing node: " << node->getName() << " with new node: " << newNode->getName() << endl;
@@ -817,6 +829,8 @@ int main(int argc, char **argv) {
         if (logFlag) {
             logFile << "MAP VALUES AFTER SHRINKING" << endl;
             printMap(nodeMap, logFile);
+            logFile << "REPLACEMENT MAP" << endl;
+            printReplacementMap(replaceNodesMap, logFile);
         }
 
         if (isShrinkable) {

@@ -71,6 +71,7 @@ extern set<string> singleBitReturnValueOperators;
 
 
 void printMap(map<string, Node *>& nMap, ostream& out);
+void printReplacementMap(map<string, string>& rMap, ostream& out);
 void addSuccsAndPreds(Node *parent, vector<Node *> *succs);
 void getExtractNodes(Node *root, queue<Node *>& bitSliceQueue);
 
